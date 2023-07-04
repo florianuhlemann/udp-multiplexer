@@ -1,10 +1,10 @@
 # UDP Multiplexer
 
-> ## Building
-> chmod +x build_all.sh
-> ./build_all.sh
-
 This is a simple tool that allows you to listen to any incoming UDP packages (bind on a single IP address and port) and provide a TCP server for many clients to connect to, and listen to the same data packages.
+
+> ## Building
+> + chmod +x build_all.sh
+> + ./build_all.sh
 
 > ## Usage:
 > + -h                          Print this help message
