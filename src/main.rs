@@ -1,8 +1,8 @@
-//  UDP Multiplexer v0.2.0
+//  UDP Multiplexer v0.3.0
 //  Written in Rust by Florian Uhlemann
 
 // Known Bugs:
-// - cannot handle client disconnect
+// - None, at the moment
 
 use std::env;
 use std::net::{TcpListener, UdpSocket};
@@ -24,19 +24,28 @@ fn handle_multiplexing(udp_port:u16, tcp_port:u16, client_ip_address:std::net::I
     // Spawn the TCP socket server thread
     let clients_tcp = clients.clone();
     let tcp_handle = thread::spawn(move || {
-        let listener = TcpListener::bind(format!("{}:{}",server_ip_address, tcp_port)).unwrap();
-        println!("A TCP server is listening on tcp://{server_ip_address}:{tcp_port}");
-        for stream in listener.incoming() {
-            match stream {
-                Ok(stream) => {
-                    let mut clients = clients_tcp.lock().unwrap();
-                    println!("\rNew client connected: {}                   ", stream.peer_addr().unwrap());
-                    io::stdout().flush().unwrap();
-                    clients.push(stream.try_clone().unwrap());
+        match TcpListener::bind(format!("{}:{}", server_ip_address, tcp_port)) {
+            Ok(listener) => {
+                thread::sleep(Duration::from_millis(25));
+                println!("A TCP server is listening on tcp://{server_ip_address}:{tcp_port}");
+                for stream in listener.incoming() {
+                    match stream {
+                        Ok(stream) => {
+                            let mut clients = clients_tcp.lock().unwrap();
+                            println!("\rNew client connected: {}                    ", stream.peer_addr().unwrap());
+                            io::stdout().flush().unwrap();
+                            clients.push(stream.try_clone().unwrap());
+                        }
+                        Err(e) => {
+                            eprintln!("TCP socket error: {}", e);
+                        }
+                    }
                 }
-                Err(e) => {
-                    eprintln!("TCP socket error: {}", e);
-                }
+
+            }
+            Err(e) => {
+                eprintln!("Error: {e} -> Failed to bind to tcp://{server_ip_address}:{tcp_port}");
+                std::process::exit(1);
             }
         }
     });
@@ -45,24 +54,34 @@ fn handle_multiplexing(udp_port:u16, tcp_port:u16, client_ip_address:std::net::I
     // Spawn the UDP listener thread
     let clients_udp = clients.clone();
     let udp_handle = thread::spawn(move || {
-        let socket = UdpSocket::bind(format!("{}:{}", client_ip_address, udp_port)).unwrap();
-        println!("A UDP client is listening on udp://{client_ip_address}:{udp_port}");
-        loop {
-            let mut buf = [0; 8192];
-            let (amt, _) = socket.recv_from(&mut buf).unwrap();
-            let mut my_data_udp = my_data1.lock().unwrap();
-            *my_data_udp += amt;
-            drop(my_data_udp);
-            let mut clients_b = clients_udp.lock().unwrap();
-            clients_b.retain(|mut client| {
-                match client.write_all(&buf[..amt]) {
-                    Ok(_) => true,
-                    Err(_) => {
-                        println!("Client disconnected: {}", client.peer_addr().unwrap());
-                        false
-                    }
+        match UdpSocket::bind(format!("{}:{}", client_ip_address, udp_port)) {
+            Ok(socket) => {
+                thread::sleep(Duration::from_millis(25));
+                println!("A UDP client is listening on udp://{client_ip_address}:{udp_port}");
+                loop {
+                    let mut buf = [0; 8192];
+                    let (amt, _) = socket.recv_from(&mut buf).unwrap();
+                    let mut my_data_udp = my_data1.lock().unwrap();
+                    *my_data_udp += amt;
+                    drop(my_data_udp);
+                    let mut clients_b = clients_udp.lock().unwrap();
+                    clients_b.retain(|mut client| {
+                        match client.write_all(&buf[..amt]) {
+                            Ok(_) => true,
+                            Err(_) => {
+                                println!("\rFailed to send data client: it is no longer connected.");
+                                // should I remove the missing client now? or is it automatically done?
+                                false
+                            }
+                        }
+                    });
                 }
-            });
+            }
+            Err(e) => {
+                eprintln!("Error: {e} -> Failed to bind to udp://{client_ip_address}:{udp_port}");
+                std::process::exit(1);
+            }
+
         }
     });
 
